@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chapter Readability Checker</title>
+<style>
+:root{--bg:#faf8f4;--fg:#222;--muted:#6b6b6b;--card:#fff;--line:#e3ded4;--accent:#b4452c;--mark:#ffe0a8;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#1c1b19;--fg:#ece8e0;--muted:#a09a8e;--card:#262421;--line:#3a3732;--accent:#e8805f;--mark:#5a4320}}
+:root[data-theme="dark"]{--bg:#1c1b19;--fg:#ece8e0;--muted:#a09a8e;--card:#262421;--line:#3a3732;--accent:#e8805f;--mark:#5a4320}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 Georgia,"Times New Roman",serif}
+main{max-width:760px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.7rem;margin:0 0 4px}
+p.sub{color:var(--muted);margin:0 0 18px;font-family:system-ui,sans-serif;font-size:.95rem}
+textarea{width:100%;min-height:200px;box-sizing:border-box;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--fg);font:inherit;resize:vertical}
+button{margin-top:10px;padding:10px 20px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:600 1rem system-ui,sans-serif;cursor:pointer}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);margin-left:8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:18px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;font-family:system-ui,sans-serif}
+.stat b{display:block;font-size:1.5rem}.stat span{color:var(--muted);font-size:.8rem}
+h2{font-size:1.1rem;margin:0 0 10px;font-family:system-ui,sans-serif}
+mark{background:var(--mark);color:inherit;border-radius:3px;padding:0 2px}
+mark sup{color:var(--accent);font:700 .7rem system-ui,sans-serif;margin-left:2px}
+ol{padding-left:20px}li{margin-bottom:8px}
+.meta{color:var(--muted);font:.8rem system-ui,sans-serif}
+#text{white-space:pre-wrap;overflow-wrap:anywhere}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<main>
+<h1>Chapter Readability Checker</h1>
+<p class="sub">Paste a chapter. Get a readability score and your 5 hardest sentences. Runs in your browser; your text is never uploaded.</p>
+<textarea id="in" placeholder="Paste your chapter here..."></textarea>
+<div><button id="go">Analyze</button><button class="ghost" id="clr">Clear</button></div>
+
+<div id="out" class="hidden">
+  <div class="card"><div class="stats" id="stats"></div><p class="meta" id="verdict" style="margin:12px 0 0"></p></div>
+  <div class="card"><h2>Your 5 hardest sentences</h2><ol id="hard"></ol></div>
+  <div class="card"><h2>Chapter with hard sentences highlighted</h2><div id="text"></div></div>
+</div>
+</main>
+<script>
+(function(){
+var ABBR=["Mr","Mrs","Ms","Dr","Prof","Sr","Jr","St","vs","etc","e.g","i.e","Mt"];
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function syl(w){
+  w=w.toLowerCase().replace(/[^a-z]/g,"");
+  if(!w)return 0; if(w.length<=3)return 1;
+  w=w.replace(/(?:[^laeiouy]es|ed|[^laeiouy]e)$/,"").replace(/^y/,"");
+  var m=w.match(/[aeiouy]{1,2}/g);return Math.max(1,m?m.length:1);
+}
+function split(t){
+  var p=t;
+  ABBR.forEach(function(a){p=p.replace(new RegExp("\\b"+a.replace(/\./g,"\\.")+"\\.","g"),a+"\u0001")});
+  var parts=p.match(/[^.!?]+(?:[.!?]+["'\u201d\u2019)]*|$)\s*/g)||[];
+  return parts.map(function(s){return s.replace(/\u0001/g,".")});
+}
+function words(s){return (s.match(/[A-Za-z\u00C0-\u024F'\u2019-]+/g)||[])}
+function analyze(){
+  var t=document.getElementById("in").value;
+  if(!t.trim())return;
+  var sents=split(t),W=0,S=0,SY=0,info=[];
+  sents.forEach(function(s,i){
+    var ws=words(s);if(!ws.length){info.push({s:s,score:-1,n:0});return}
+    var sy=ws.reduce(function(a,w){return a+syl(w)},0);
+    W+=ws.length;SY+=sy;S++;
+    var score=ws.length+5*(sy/ws.length);
+    info.push({s:s,score:ws.length<6?-1:score,n:ws.length,i:i});
+  });
+  var asl=W/S,asw=SY/W;
+  var fre=206.835-1.015*asl-84.6*asw, fk=0.39*asl+11.8*asw-15.59;
+  var top=info.filter(function(x){return x.score>=0}).sort(function(a,b){return b.score-a.score}).slice(0,5);
+  var rank=new Map();top.forEach(function(x,k){rank.set(x.i,k+1)});
+  var lvl=fre>=80?"Easy to read":fre>=60?"Plain, easy for most readers":fre>=50?"Fairly difficult":fre>=30?"Difficult":"Very difficult";
+  document.getElementById("stats").innerHTML=
+   '<div class="stat"><b>'+Math.round(fre)+'</b><span>Reading ease (0-100)</span></div>'+
+   '<div class="stat"><b>'+Math.max(0,fk).toFixed(1)+'</b><span>Grade level</span></div>'+
+   '<div class="stat"><b>'+W+'</b><span>Words</span></div>'+
+   '<div class="stat"><b>'+asl.toFixed(1)+'</b><span>Avg words / sentence</span></div>';
+  document.getElementById("verdict").textContent=lvl+". Higher reading ease means easier to read.";
+  document.getElementById("hard").innerHTML=top.map(function(x){
+    return '<li>'+esc(x.s.trim())+'<div class="meta">'+x.n+' words</div></li>'}).join("")||"<li>Not enough text.</li>";
+  document.getElementById("text").innerHTML=info.map(function(x){
+    var r=rank.get(x.i);
+    if(!r)return esc(x.s);
+    var m=x.s.match(/\s*$/)[0];
+    return '<mark>'+esc(x.s.slice(0,x.s.length-m.length))+'<sup>#'+r+'</sup></mark>'+esc(m);
+  }).join("");
+  document.getElementById("out").classList.remove("hidden");
+  document.getElementById("out").scrollIntoView({behavior:"smooth"});
+}
+document.getElementById("go").onclick=analyze;
+document.getElementById("clr").onclick=function(){document.getElementById("in").value="";document.getElementById("out").classList.add("hidden")};
+})();
+</script>
+</body>
+</html>
